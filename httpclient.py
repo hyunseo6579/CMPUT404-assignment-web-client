@@ -33,7 +33,13 @@ class HTTPResponse(object):
         self.body = body
 
 class HTTPClient(object):
-    #def get_host_port(self,url):
+
+    def get_host_port(self,url):
+        host = urllib.parse.urlparse(url).hostname
+        port = urllib.parse.urlparse(url).port
+        if port is None:
+            port = 80
+        return host, port
 
     def connect(self, host, port):
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -41,13 +47,24 @@ class HTTPClient(object):
         return None
 
     def get_code(self, data):
-        return None
+        first_line = data.split("\r\n")[0]
+        code = first_line.split(" ")[1]
+        return int(code)
 
     def get_headers(self,data):
-        return None
+        # return everything after first line until \r\n\r\n
+        headers = []
+        temp = data.split("\r\n")
+        temp.pop(0)
+        temp = temp[:temp.index('')]
+        for eachHeader in temp:
+            headers.append(eachHeader.split(': ', 1))
+        return headers
 
     def get_body(self, data):
-        return None
+        # return everything after \r\n\r\n
+        body = data.split("\r\n\r\n")[1]
+        return body
     
     def sendall(self, data):
         self.socket.sendall(data.encode('utf-8'))
@@ -65,11 +82,39 @@ class HTTPClient(object):
                 buffer.extend(part)
             else:
                 done = not part
-        return buffer.decode('utf-8')
+        try:
+            return buffer.decode('utf-8')
+        # reference: https://stackoverflow.com/a/19706723
+        except UnicodeDecodeError:
+            return buffer.decode('ISO-8859-1')
+
+    # assemble and return request; referenced Class Participation Exercise: HTTP GET
+    # reference2: https://www.ietf.org/rfc/rfc2616.txt
+    def assemble(self, host, path):
+        request = "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\nAccept-Charset: utf-8\r\n\r\n\r\n" % (path, host)
+        return request
 
     def GET(self, url, args=None):
-        code = 500
-        body = ""
+        host, port = self.get_host_port(url)
+        self.connect(host,port)
+        path = urllib.parse.urlparse(url).path
+        if path == "":
+            path = "/"
+
+        request = self.assemble(host, path)
+        self.sendall(request)
+
+        data = self.recvall(self.socket)
+
+        code = self.get_code(data)
+        header = self.get_headers(data)
+        body = self.get_body(data)
+
+        print(code)
+        print(header)
+        print(body)
+
+        self.close()
         return HTTPResponse(code, body)
 
     def POST(self, url, args=None):
