@@ -21,6 +21,7 @@
 import sys
 import socket
 import re
+import json
 # you may use urllib to encode data appropriately
 import urllib.parse
 
@@ -90,8 +91,14 @@ class HTTPClient(object):
 
     # assemble and return request; referenced Class Participation Exercise: HTTP GET
     # reference2: https://www.ietf.org/rfc/rfc2616.txt
-    def assemble(self, host, path):
-        request = "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\nAccept-Charset: utf-8\r\n\r\n\r\n" % (path, host)
+    def assemble(self, host, path, method, body=None):
+        # 1 == GET, 2 == POST
+        if method == 1:
+            request = "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\nAccept: */*\r\n\r\n" % (path, host)
+        else:
+            request = "POST %s HTTP/1.1\r\nHost: %s\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: %s\r\nConnection: close\r\nAccept: */*\r\n\r\n" % (path, host, str(len(body)))
+            if len(body) is not 0:
+                request += body
         return request
 
     def GET(self, url, args=None):
@@ -101,25 +108,41 @@ class HTTPClient(object):
         if path == "":
             path = "/"
 
-        request = self.assemble(host, path)
+        request = self.assemble(host, path, 1)
         self.sendall(request)
 
         data = self.recvall(self.socket)
 
         code = self.get_code(data)
-        header = self.get_headers(data)
         body = self.get_body(data)
-
-        print(code)
-        print(header)
-        print(body)
 
         self.close()
         return HTTPResponse(code, body)
 
     def POST(self, url, args=None):
-        code = 500
-        body = ""
+        host, port = self.get_host_port(url)
+        self.connect(host,port)
+        path = urllib.parse.urlparse(url).path
+        if path == "":
+            path = "/"
+
+        # needs to be in format of: a=b&fruit=apple ...
+        # reference: https://www.w3schools.com/python/gloss_python_loop_dictionary_items.asp
+        post_content = ''
+        if args is not None:
+            for key in args:
+                post_content += str(key)+"="+str(args[key])+"&"
+            # remove last '&'
+            post_content = post_content[:-1]
+
+        request = self.assemble(host, path, 2, post_content)
+        self.sendall(request)
+
+        data = self.recvall(self.socket)
+
+        code = self.get_code(data)
+        body = self.get_body(data)
+
         return HTTPResponse(code, body)
 
     def command(self, url, command="GET", args=None):
